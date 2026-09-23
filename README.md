@@ -28,13 +28,21 @@ CoppeliaSim (OT)  →  ROS 2  →  MATLAB (Analytical Brain)  →  Odoo (Command
 - **Secondary:** Pipeline pressure spike → MATLAB detects envelope breach → CRITICAL → ESD valve closes → emergency/maintenance response.
 
 ## Repo Structure
+The repo root is the `predictive_safety` Odoo module itself (clone it into a folder named `predictive_safety` on your Odoo `addons_path`):
 ```
-├── coppeliasim/        # 3D scene + Lua control scripts
-├── ros_bridge/          # ZMQ ↔ ROS 2 relay script
-├── odoo_module/         # Odoo listener + ORM logic (Python/XML module)
-├── matlab/              # Safety-envelope functions (check_reactor, check_pipeline, etc.)
-└── docs/                # Architecture diagrams, notes
+├── __manifest__.py       # Odoo module manifest
+├── models/               # Pipeline equipment, pressure history, Force Shutdown / Manual Reset, Discuss alerts
+├── views/                # Pipeline form (status badges, pressure chart), list and graph views
+├── security/             # Access rights
+├── safety_listener.py    # ROS 2 ↔ Odoo bridge: latching auto-shutdown, pushes readings into Odoo
+├── check_db.py           # Helper: lists Odoo databases
+├── coppeliasim/          # 3D scene + Lua control script (paste into the /Outflow_Pipe child script)
+├── ros_bridge/           # ZMQ ↔ ROS 2 relay script (runs in the ROS 2 Docker container)
+├── matlab/               # (planned) Safety-envelope functions (check_reactor, check_pipeline, etc.)
+└── docs/                 # (planned) Architecture diagrams, notes
 ```
+
+`safety_listener.py` reads `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME` and `ODOO_PASSWORD` from the environment (defaults: local demo instance).
 
 ## Team
 - **Noel** — MATLAB safety-envelope engineering logic

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_predictive_safety_pipeline_tree" model="ir.ui.view">
+        <field name="name">predictive.safety.pipeline.tree</field>
+        <field name="model">predictive.safety.pipeline</field>
+        <field name="arch" type="xml">
+            <list string="Pipeline Equipment">
+                <field name="name"/>
+                <field name="material"/>
+                <field name="grade"/>
+                <field name="diameter"/>
+                <field name="thickness"/>
+                <field name="current_status"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_predictive_safety_pipeline_form" model="ir.ui.view">
+        <field name="name">predictive.safety.pipeline.form</field>
+        <field name="model">predictive.safety.pipeline</field>
+        <field name="arch" type="xml">
+            <form string="Pipeline Equipment">
+                <header>
+                    <button name="force_shutdown" type="object" string="Force Shutdown"
+                            class="btn-danger" confirm="Manually trigger emergency shutdown?"/>
+                    <button name="reset_to_safe" type="object" string="Manual Reset"
+                            class="btn-primary" invisible="current_status != 'critical'"
+                            confirm="Confirm maintenance is complete and resume operations?"/>
+                </header>
+                <sheet>
+                    <field name="image" widget="image" class="oe_avatar"/>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="material"/>
+                            <field name="grade"/>
+                            <field name="current_status"/>
+                            <field name="last_pressure"/>
+                            <field name="valve_state" widget="badge"
+                                   decoration-danger="valve_state == 'closed'"
+                                   decoration-success="valve_state == 'open'"/>
+                        </group>
+                        <group>
+                            <field name="diameter"/>
+                            <field name="thickness"/>
+                            <field name="corrosion_allowance"/>
+                            <field name="design_temperature"/>
+                            <field name="design_pressure"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Pressure History" name="pressure_history">
+                            <field name="pressure_chart" nolabel="1" readonly="1"/>
+                            <button name="action_open_pressure_graph" type="object"
+                                    string="Full Graph" icon="fa-line-chart" class="btn-secondary mb-3"/>
+                            <field name="reading_ids" readonly="1">
+                                <list limit="10">
+                                    <field name="timestamp"/>
+                                    <field name="pressure"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_predictive_safety_pressure_reading_graph" model="ir.ui.view">
+        <field name="name">predictive.safety.pressure.reading.graph</field>
+        <field name="model">predictive.safety.pressure.reading</field>
+        <field name="arch" type="xml">
+            <graph string="Pressure History" type="line">
+                <field name="timestamp" interval="minute" type="row"/>
+                <field name="pressure" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_predictive_safety_pressure_reading_list" model="ir.ui.view">
+        <field name="name">predictive.safety.pressure.reading.list</field>
+        <field name="model">predictive.safety.pressure.reading</field>
+        <field name="arch" type="xml">
+            <list string="Pressure Readings">
+                <field name="timestamp"/>
+                <field name="equipment_id"/>
+                <field name="pressure"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_predictive_safety_pipeline" model="ir.actions.act_window">
+        <field name="name">Pipeline Specifications</field>
+        <field name="res_model">predictive.safety.pipeline</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_predictive_safety_root" name="Predictive Safety" sequence="10"/>
+    <menuitem id="menu_pipeline_specs" name="Pipelines" parent="menu_predictive_safety_root" action="action_predictive_safety_pipeline" sequence="10"/>
+</odoo>

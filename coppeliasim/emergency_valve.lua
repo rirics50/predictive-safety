@@ -1,18 +1,28 @@
+-- Child script on /Outflow_Pipe in reactor_simulation.ttt.
+-- Reference copy only: CoppeliaSim runs the copy embedded in the scene, so
+-- paste changes into the scene's script editor to apply them.
+
 sim = require('sim')
 
 function sysCall_init()
     valveJoint = sim.getObject('/Outflow_Pipe/Emergency_Valve')
-    basePressure = 45.0 -- Safe baseline pressure
+    basePressure = 45.0
     isShutDown = false
+    currentPressure = basePressure
+
+    -- Controls how often a new pressure reading is generated
+    updateInterval = 20  -- seconds
+    lastUpdateTime = 0
+
+    math.randomseed(os.time())
 end
 
 function sysCall_actuation()
-    local t = sim.getSimulationTime()
-
-    -- Read the shutdown signal coming from ROS 2
+    -- Wall-clock seconds: the simulation isn't in real-time mode, so
+    -- sim.getSimulationTime() runs ~100x faster than real time
+    local t = sim.getSystemTime()
     local shutdownSignal = sim.getFloatSignal('valve_shutdown')
 
-    -- Evaluate shutdown condition
     if shutdownSignal and shutdownSignal > 0.5 then
         isShutDown = true
     else
@@ -20,13 +30,22 @@ function sysCall_actuation()
     end
 
     if isShutDown then
-        -- Keep the valve shut permanently when triggered
+        -- Emergency state: hold the valve fully closed, and hold pressure
+        -- steady. No automatic recovery - stays this way until an
+        -- engineer clicks Manual Reset in Odoo.
         sim.setJointPosition(valveJoint, 1.57)
     else
-        -- Oscillation now peaks at 55 PSI (was capped at 49) so it can
-        -- actually cross the 53 PSI threshold and trigger auto-shutdown
-        local currentPressure = basePressure + (math.sin(t * 2) * 10)
-        sim.setFloatSignal('live_pressure', currentPressure)
         sim.setJointPosition(valveJoint, 0.0)
+
+        -- Only generate a NEW pressure reading every `updateInterval`
+        -- seconds, instead of continuously oscillating
+        if t - lastUpdateTime >= updateInterval then
+            lastUpdateTime = t
+            -- Random reading: baseline +/- up to 12 PSI, occasionally
+            -- crossing the 53 PSI threshold
+            currentPressure = basePressure + (math.random() * 24 - 12)
+        end
     end
+
+    sim.setFloatSignal('live_pressure', currentPressure)
 end

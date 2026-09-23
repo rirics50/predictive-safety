@@ -63,10 +63,16 @@ class CoppeliaBridge(Node):
 
     def shutdown_callback(self, msg):
         try:
-            # Forward the shutdown command signal back into CoppeliaSim
-            shutdown_val = float(msg.data)
+            # Forward the shutdown command signal back into CoppeliaSim, but
+            # only when it changes the valve state so repeats don't spam the log
+            shutdown_val = 1.0 if msg.data >= 0.5 else 0.0
+            if shutdown_val == self.sim.getFloatSignal('valve_shutdown'):
+                return
             self.sim.setFloatSignal('valve_shutdown', shutdown_val)
-            self.get_logger().info(f'valve_shutdown set to {shutdown_val}')
+            if shutdown_val:
+                self.get_logger().warn('VALVE SHUTDOWN RECEIVED: Closing valve!')
+            else:
+                self.get_logger().info('VALVE SHUTDOWN CLEARED: Opening valve.')
         except Exception as e:
             self.get_logger().error(f'Failed to set shutdown signal in simulation: {e}')
 
