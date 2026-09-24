@@ -32,8 +32,9 @@ The repo root is the `predictive_safety` Odoo module itself (clone it into a fol
 ```
 ├── __manifest__.py       # Odoo module manifest
 ├── models/               # Pipeline equipment, pressure history, Force Shutdown / Manual Reset, Discuss alerts
-├── views/                # Pipeline form (status badges, pressure chart), list and graph views
+├── views/                # Pipeline form (status badges, pressure chart) and list view
 ├── security/             # Access rights
+├── controllers/          # JSON API: GET /api/equipment/<name> returns equipment specs (used by MATLAB)
 ├── safety_listener.py    # ROS 2 ↔ Odoo bridge: latching auto-shutdown, pushes readings into Odoo
 ├── check_db.py           # Helper: lists Odoo databases
 ├── coppeliasim/          # 3D scene + Lua control script (paste into the /Outflow_Pipe child script)
