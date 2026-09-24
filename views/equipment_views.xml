@@ -4,7 +4,7 @@
         <field name="name">predictive.safety.pipeline.tree</field>
         <field name="model">predictive.safety.pipeline</field>
         <field name="arch" type="xml">
-            <list string="Pipeline Equipment">
+            <list string="Pipeline Equipment" class="o_predictive_safety">
                 <field name="name"/>
                 <field name="material"/>
                 <field name="grade"/>
@@ -19,7 +19,7 @@
         <field name="name">predictive.safety.pipeline.form</field>
         <field name="model">predictive.safety.pipeline</field>
         <field name="arch" type="xml">
-            <form string="Pipeline Equipment">
+            <form string="Pipeline Equipment" class="o_predictive_safety">
                 <header>
                     <button name="force_shutdown" type="object" string="Force Shutdown"
                             class="btn-danger" confirm="Manually trigger emergency shutdown?"/>
@@ -34,7 +34,10 @@
                             <field name="name"/>
                             <field name="material"/>
                             <field name="grade"/>
-                            <field name="current_status"/>
+                            <field name="current_status" widget="badge"
+                                   decoration-danger="current_status == 'critical'"
+                                   decoration-warning="current_status == 'warning'"
+                                   decoration-success="current_status == 'safe'"/>
                             <field name="last_pressure"/>
                             <field name="valve_state" widget="badge"
                                    decoration-danger="valve_state == 'closed'"
