@@ -101,17 +101,25 @@ class PipelineEquipment(models.Model):
         return True
 
     def receive_safety_reading(self, status, pressure=None, reason=None):
-        """Called externally (via XML-RPC from safety_listener.py) whenever
-        MATLAB publishes a new SAFE/WARNING/CRITICAL decision for this
-        equipment. pressure is context for the ticket, reason is MATLAB's
-        explanation."""
+        """Single authority for MATLAB's SAFE/WARNING/CRITICAL decisions,
+        whether they arrive via safety_listener.py (ROS /safety_status) or
+        the /api/safety_status HTTP endpoint. pressure is context for the
+        ticket, reason is MATLAB's explanation."""
         self.ensure_one()
         previous = self.current_status
+        # CRITICAL latches: the valve stays shut and only Manual Reset
+        # (reset_to_safe) clears it, so later SAFE/WARNING calls are ignored
+        if previous == 'critical' and status != 'critical':
+            return False
         self.current_status = status
         self.valve_state = 'closed' if status == 'critical' else 'open'
-        # Only open a ticket on the transition into critical, not on every
-        # reading while the equipment stays critical
+        # Only act on the transition into critical, not on every reading
+        # while the equipment stays critical
         if status == 'critical' and previous != 'critical':
+            # Same mechanism as Force Shutdown: raises if ROS is unreachable,
+            # which rolls back the status change instead of faking a closure.
+            # 2.0 (not 1.0) tells the listener MATLAB triggered it, for its log
+            self._publish_manual_override(2.0)
             self._trigger_emergency_response(pressure, reason)
         return True
 
@@ -185,7 +193,8 @@ class PipelineEquipment(models.Model):
         )
 
     def _publish_manual_override(self, value):
-        """value: 1.0 to force-close (lock shut), -1.0 to reset (force-open, resume auto)"""
+        """value: 1.0 to force-close (Force Shutdown), 2.0 to close for a MATLAB
+        CRITICAL, -1.0 to reset (force-open, resume auto)"""
         import roslibpy
         try:
             client = roslibpy.Ros(host='localhost', port=9090)

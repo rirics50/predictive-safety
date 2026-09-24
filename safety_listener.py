@@ -130,7 +130,14 @@ def override_callback(message):
     global valve_is_closed
     value = message['data']
 
-    if value >= 0.5:
+    if value >= 1.5:
+        # MATLAB CRITICAL that reached Odoo over HTTP. If it came via ROS
+        # instead, safety_status_callback already closed the valve and logged it
+        if not valve_is_closed:
+            print(">>> CRITICAL: MATLAB CRITICAL via HTTP - emergency valve shutdown activated! Manual Reset in Odoo required to reopen.")
+            talker.publish(roslibpy.Message({'data': 1.0}))
+            valve_is_closed = True
+    elif value >= 0.5:
         print(">>> MANUAL OVERRIDE (Odoo): Force Shutdown - valve locked closed.")
         if not valve_is_closed:
             talker.publish(roslibpy.Message({'data': 1.0}))
