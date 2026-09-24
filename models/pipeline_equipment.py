@@ -5,8 +5,8 @@ from markupsafe import Markup, escape
 from odoo import api, models, fields
 from odoo.exceptions import UserError
 
-# Must match CLOSE_THRESHOLD in safety_listener.py - drawn on the pressure chart
-CLOSE_THRESHOLD = 53.0
+# Reference line drawn on the pressure chart. Display only - MATLAB decides shutdowns
+REFERENCE_PRESSURE = 53.0
 CHART_READINGS = 50
 
 
@@ -59,8 +59,8 @@ class PipelineEquipment(models.Model):
                 continue
 
             values = readings.mapped('pressure')
-            low = min(min(values), CLOSE_THRESHOLD) - 2
-            high = max(max(values), CLOSE_THRESHOLD) + 2
+            low = min(min(values), REFERENCE_PRESSURE) - 2
+            high = max(max(values), REFERENCE_PRESSURE) + 2
             step = (width - pad_left - pad_right) / (len(values) - 1)
 
             def y(v):
@@ -69,7 +69,7 @@ class PipelineEquipment(models.Model):
             points = ' '.join(f'{pad_left + i * step:.1f},{y(v):.1f}' for i, v in enumerate(values))
             first = fields.Datetime.context_timestamp(rec, readings[0].timestamp).strftime('%H:%M:%S')
             last = fields.Datetime.context_timestamp(rec, readings[-1].timestamp).strftime('%H:%M:%S')
-            limit_y = y(CLOSE_THRESHOLD)
+            limit_y = y(REFERENCE_PRESSURE)
             rec.pressure_chart = Markup(
                 f'<svg viewBox="0 0 {width} {height + 16}" style="width:100%;max-width:{width}px;font-size:11px" '
                 f'role="img" aria-label="Pressure history line chart">'
@@ -78,43 +78,67 @@ class PipelineEquipment(models.Model):
                 f'<text x="{pad_left - 6}" y="{pad_y + 4}" text-anchor="end" fill="currentColor">{high:.0f}</text>'
                 f'<text x="{pad_left - 6}" y="{height - pad_y + 4}" text-anchor="end" fill="currentColor">{low:.0f}</text>'
                 f'<line x1="{pad_left}" y1="{limit_y:.1f}" x2="{width - pad_right}" y2="{limit_y:.1f}" stroke="#dc3545" stroke-dasharray="5,4"/>'
-                f'<text x="{width - pad_right}" y="{limit_y - 4:.1f}" text-anchor="end" fill="#dc3545">{CLOSE_THRESHOLD:.0f} PSI shutdown limit</text>'
+                f'<text x="{width - pad_right}" y="{limit_y - 4:.1f}" text-anchor="end" fill="#dc3545">{REFERENCE_PRESSURE:.0f} PSI design reference</text>'
                 f'<polyline points="{points}" fill="none" stroke="#0d6efd" stroke-width="2" stroke-linejoin="round"/>'
                 f'<text x="{pad_left}" y="{height + 12}" fill="currentColor">{escape(first)}</text>'
                 f'<text x="{width - pad_right}" y="{height + 12}" text-anchor="end" fill="currentColor">{escape(last)}</text>'
                 f'</svg>'
             )
 
-    def receive_safety_reading(self, status, pressure=None):
+    def log_pressure_reading(self, pressure):
+        """Called externally (via XML-RPC from safety_listener.py) for every
+        live pressure reading. Feeds the dashboard chart only - never changes
+        current_status or valve_state, which MATLAB decides."""
+        self.ensure_one()
+        # The bridge re-publishes the same held value ~10x/second, so only
+        # log a reading when the value actually changes
+        if pressure != self.last_pressure:
+            self.env['predictive.safety.pressure.reading'].create({
+                'equipment_id': self.id,
+                'pressure': pressure,
+            })
+            self.last_pressure = pressure
+        return True
+
+    def receive_safety_reading(self, status, pressure=None, reason=None):
         """Called externally (via XML-RPC from safety_listener.py) whenever
-        a new SAFE/WARNING/CRITICAL reading comes in for this equipment."""
+        MATLAB publishes a new SAFE/WARNING/CRITICAL decision for this
+        equipment. pressure is context for the ticket, reason is MATLAB's
+        explanation."""
         self.ensure_one()
         previous = self.current_status
         self.current_status = status
         self.valve_state = 'closed' if status == 'critical' else 'open'
-        if pressure is not None:
-            # The bridge re-publishes the same held value ~10x/second, so only
-            # log a reading when the value actually changes
-            if pressure != self.last_pressure:
-                self.env['predictive.safety.pressure.reading'].create({
-                    'equipment_id': self.id,
-                    'pressure': pressure,
-                })
-            self.last_pressure = pressure
         # Only open a ticket on the transition into critical, not on every
         # reading while the equipment stays critical
         if status == 'critical' and previous != 'critical':
-            self._trigger_emergency_response(pressure)
+            self._trigger_emergency_response(pressure, reason)
         return True
 
-    def _trigger_emergency_response(self, pressure=None):
+    def _trigger_emergency_response(self, pressure=None, reason=None):
         """Day 1: create a Maintenance request so the failure is logged and
         visible to engineers immediately.
         Day 2 TODO: also halt the related Manufacturing order (Quality),
         dispatch a Field Service task, and notify shift workers via Discuss."""
         self.ensure_one()
+        pressure_note = f'{pressure:.2f} PSI' if pressure is not None else 'not available'
+        if reason:
+            # MATLAB's safety engine decided CRITICAL and explained why
+            title = f'CRITICAL: {self.name} - {reason}'
+            description = (
+                f'Safety engine (MATLAB): {reason}. '
+                f'Live pressure reading: {pressure_note} '
+                f'(design pressure: {self.design_pressure} PSI). '
+                f'Emergency shutdown valve triggered automatically by the '
+                f'predictive safety system.'
+            )
+            alert = (
+                f"🚨 CRITICAL: {self.name} - {reason} "
+                f"(pressure: {pressure_note}, design limit: {self.design_pressure} PSI). "
+                f"Emergency shutdown valve activated automatically."
+            )
         # pressure is None when an operator clicked Force Shutdown in Odoo
-        if pressure is None:
+        elif pressure is None:
             title = f'CRITICAL: {self.name} manual emergency shutdown'
             description = (
                 f'Emergency shutdown manually triggered from Odoo '
