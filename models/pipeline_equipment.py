@@ -189,14 +189,3 @@ class PipelineEquipment(models.Model):
         self._publish_manual_override(-1.0)
         self.current_status = 'safe'
         self.valve_state = 'open'
-
-    def action_open_pressure_graph(self):
-        self.ensure_one()
-        return {
-            'type': 'ir.actions.act_window',
-            'name': f'{self.name} Pressure History',
-            'res_model': 'predictive.safety.pressure.reading',
-            'view_mode': 'graph,list',
-            'domain': [('equipment_id', '=', self.id)],
-            'context': {'default_equipment_id': self.id},
-        }
