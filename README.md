@@ -31,19 +31,57 @@ CoppeliaSim (OT)  →  ROS 2  →  MATLAB (Analytical Brain)  →  Odoo (Command
 The repo root is the `predictive_safety` Odoo module itself (clone it into a folder named `predictive_safety` on your Odoo `addons_path`):
 ```
 ├── __manifest__.py       # Odoo module manifest
-├── models/               # Pipeline equipment, pressure history, Force Shutdown / Manual Reset, Discuss alerts
+├── models/               # One equipment record per monitored pipe: live readings, pressure history,
+│                         #   latching status, Force Shutdown / Manual Reset, Discuss alerts
 ├── views/                # Pipeline form (status badges, pressure chart) and list view
 ├── security/             # Access rights
-├── controllers/          # JSON API: GET /api/equipment/<name> returns equipment specs (used by MATLAB)
-├── safety_listener.py    # ROS 2 ↔ Odoo bridge: latching auto-shutdown, pushes readings into Odoo
+├── controllers/          # JSON API used by ros_bridge.py and MATLAB (see API below)
+├── static/               # Industrial control panel theme, scoped to this module's views
+├── ros_bridge/           # CoppeliaSim <-> Odoo relay: posts all 5 pipes' readings, applies each
+│                         #   pipe's valve command (runs in the ROS 2 Docker container)
+├── coppeliasim/          # 3D scene + Lua script (the /Distillation_Column child script)
+├── safety_listener.py    # (legacy) single-pipe P-101 ROS listener - superseded by ros_bridge.py
+│                         #   and the HTTP API below; not needed for the 5-pipe setup
 ├── check_db.py           # Helper: lists Odoo databases
-├── coppeliasim/          # 3D scene + Lua control script (paste into the /Outflow_Pipe child script)
-├── ros_bridge/           # ZMQ ↔ ROS 2 relay script (runs in the ROS 2 Docker container)
 ├── matlab/               # (planned) Safety-envelope functions (check_reactor, check_pipeline, etc.)
 └── docs/                 # (planned) Architecture diagrams, notes
 ```
 
-`safety_listener.py` reads `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME` and `ODOO_PASSWORD` from the environment (defaults: local demo instance).
+`ros_bridge.py` reads `ODOO_URL` from the environment (default `http://host.docker.internal:8069`).
+
+## API
+Each of the 5 monitored pipes is its own Odoo equipment record, named exactly:
+`feed_pipeline`, `column_bottom`, `column_top`, `bottoms_output`, `distillate_output`.
+`<name>` below is always one of these. All values are raw scene units: °F, PSI, gpm; timestamps are UTC ISO 8601.
+
+| Method | Path | Used by | Purpose |
+|---|---|---|---|
+| GET | `/api/equipment/<name>` | MATLAB | Pipe spec and limits: `material`, `grade`, `diameter`, `thickness`, `corrosion_allowance`, `design_pressure`, `design_temperature`, `flow_limit` (kg/s), `pipe_length` (m) |
+| GET | `/api/live_readings` | MATLAB | Latest reading for all 5 pipes, as a list |
+| GET | `/api/live_readings/<name>` | MATLAB | Latest reading for one pipe |
+| POST | `/api/safety_status/<name>` | MATLAB | Safety verdict for one pipe (JSON-RPC, see below) |
+| POST | `/api/live_readings/<name>` | ros_bridge.py | One pipe's live reading (JSON-RPC) |
+| GET | `/api/valve_commands/<name>` | ros_bridge.py | That pipe's latched status and valve command |
+| GET | `/api/live_pressure/<name>` | dashboards | Latest pressure, status and valve state for one pipe |
+
+**Live reading** (GET response, and the POST payload from the bridge):
+```json
+{"location": "column_top", "temperature_f": 140.8, "pressure_psi": 43.2, "flow_gpm": 1.89,
+ "timestamp": "2026-09-25T18:22:34.512+00:00", "status": "safe", "valve_state": "open"}
+```
+The bridge's POST carries `location`, `temperature_f`, `pressure_psi`, `flow_gpm`, `timestamp` and optionally `valve_position` (0 open, 1 closed); `status`/`valve_state` are only in GET responses.
+
+**Safety verdict** - JSON-RPC body, `status` is `SAFE`, `WARNING` or `CRITICAL` (any case):
+```json
+{"jsonrpc": "2.0", "method": "call", "params": {"status": "CRITICAL", "reason": "Hoop stress exceeds 90% SMYS"}}
+```
+- A `CRITICAL` closes **only that pipe's** valve and creates one Maintenance ticket and one "Plant Safety Alerts" Discuss message with the reason.
+- `CRITICAL` latches: later `SAFE`/`WARNING` for that pipe are refused until **Manual Reset** on that pipe's card in Odoo. Other pipes are unaffected.
+- JSON-RPC errors come back as HTTP 200 with `result.error` (unknown pipe, invalid status, pipe latched), so check the result - e.g. in MATLAB:
+  `if isfield(resp.result, 'error'), error(resp.result.error); end`
+- The GET endpoints return HTTP 404 for an unknown `<name>`, so `webread` throws.
+
+**Changed from the single-pipe version:** the old `P-101` record and the `location` parameter are gone - use the pipe name in the path instead (`/api/safety_status/column_top`, not `/api/safety_status/P-101` + `location`). `flow_limit`/`pipe_length` are now top-level fields of `/api/equipment/<name>` (no `locations` list).
 
 ## Team
 - **Noel** — MATLAB safety-envelope engineering logic

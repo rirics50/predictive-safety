@@ -10,7 +10,9 @@
                 <field name="grade"/>
                 <field name="diameter"/>
                 <field name="thickness"/>
+                <field name="last_pressure"/>
                 <field name="current_status"/>
+                <field name="valve_state"/>
             </list>
         </field>
     </record>
@@ -39,6 +41,9 @@
                                    decoration-warning="current_status == 'warning'"
                                    decoration-success="current_status == 'safe'"/>
                             <field name="last_pressure"/>
+                            <field name="temperature"/>
+                            <field name="flow_rate"/>
+                            <field name="last_updated"/>
                             <field name="valve_state" widget="badge"
                                    decoration-danger="valve_state == 'closed'"
                                    decoration-success="valve_state == 'open'"/>
@@ -49,18 +54,11 @@
                             <field name="corrosion_allowance"/>
                             <field name="design_temperature"/>
                             <field name="design_pressure"/>
+                            <field name="flow_limit"/>
+                            <field name="pipe_length"/>
                         </group>
                     </group>
                     <notebook>
-                        <page string="Monitored Locations" name="locations">
-                            <field name="location_ids">
-                                <list editable="bottom">
-                                    <field name="location"/>
-                                    <field name="flow_limit"/>
-                                    <field name="pipe_length"/>
-                                </list>
-                            </field>
-                        </page>
                         <page string="Pressure History" name="pressure_history">
                             <field name="pressure_chart" nolabel="1" readonly="1"/>
                             <field name="reading_ids" readonly="1">

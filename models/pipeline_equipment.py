@@ -5,8 +5,6 @@ from markupsafe import Markup, escape
 from odoo import api, models, fields
 from odoo.exceptions import UserError
 
-# Reference line drawn on the pressure chart. Display only - MATLAB decides shutdowns
-REFERENCE_PRESSURE = 53.0
 CHART_READINGS = 50
 
 
@@ -45,7 +43,16 @@ class PipelineEquipment(models.Model):
     ], string='Valve State', default='open', readonly=True)
 
     reading_ids = fields.One2many('predictive.safety.pressure.reading', 'equipment_id', string='Pressure History')
-    location_ids = fields.One2many('predictive.safety.location', 'equipment_id', string='Monitored Locations')
+
+    # Each record is one monitored location (feed_pipeline, column_bottom, ...):
+    # its static flow/length specs plus the live values ros_bridge.py posts
+    # via /api/live_readings/<name>. Raw scene units - MATLAB converts.
+    flow_limit = fields.Float(string='Flow Limit (kg/s)')
+    pipe_length = fields.Float(string='Pipe Length (m)')
+    temperature = fields.Float(string='Temperature (°F)', readonly=True)
+    flow_rate = fields.Float(string='Flow Rate (gpm)', readonly=True)
+    valve_position = fields.Float(string='Valve Position (0 open, 1 closed)', readonly=True)
+    last_updated = fields.Datetime(string='Last Updated', readonly=True)
     pressure_chart = fields.Html(string='Pressure Chart', compute='_compute_pressure_chart', sanitize=False)
 
     @api.depends('reading_ids.pressure', 'reading_ids.timestamp')
@@ -60,8 +67,9 @@ class PipelineEquipment(models.Model):
                 continue
 
             values = readings.mapped('pressure')
-            low = min(min(values), REFERENCE_PRESSURE) - 2
-            high = max(max(values), REFERENCE_PRESSURE) + 2
+            reference = rec.design_pressure
+            low = min(min(values), reference) - 2
+            high = max(max(values), reference) + 2
             step = (width - pad_left - pad_right) / (len(values) - 1)
 
             def y(v):
@@ -70,7 +78,7 @@ class PipelineEquipment(models.Model):
             points = ' '.join(f'{pad_left + i * step:.1f},{y(v):.1f}' for i, v in enumerate(values))
             first = fields.Datetime.context_timestamp(rec, readings[0].timestamp).strftime('%H:%M:%S')
             last = fields.Datetime.context_timestamp(rec, readings[-1].timestamp).strftime('%H:%M:%S')
-            limit_y = y(REFERENCE_PRESSURE)
+            limit_y = y(reference)
             rec.pressure_chart = Markup(
                 f'<svg viewBox="0 0 {width} {height + 16}" style="width:100%;max-width:{width}px;font-size:11px" '
                 f'role="img" aria-label="Pressure history line chart">'
@@ -79,7 +87,7 @@ class PipelineEquipment(models.Model):
                 f'<text x="{pad_left - 6}" y="{pad_y + 4}" text-anchor="end" fill="currentColor">{high:.0f}</text>'
                 f'<text x="{pad_left - 6}" y="{height - pad_y + 4}" text-anchor="end" fill="currentColor">{low:.0f}</text>'
                 f'<line x1="{pad_left}" y1="{limit_y:.1f}" x2="{width - pad_right}" y2="{limit_y:.1f}" stroke="#dc3545" stroke-dasharray="5,4"/>'
-                f'<text x="{width - pad_right}" y="{limit_y - 4:.1f}" text-anchor="end" fill="#dc3545">{REFERENCE_PRESSURE:.0f} PSI design reference</text>'
+                f'<text x="{width - pad_right}" y="{limit_y - 4:.1f}" text-anchor="end" fill="#dc3545">{reference:.0f} PSI design pressure</text>'
                 f'<polyline points="{points}" fill="none" stroke="#0d6efd" stroke-width="2" stroke-linejoin="round"/>'
                 f'<text x="{pad_left}" y="{height + 12}" fill="currentColor">{escape(first)}</text>'
                 f'<text x="{width - pad_right}" y="{height + 12}" text-anchor="end" fill="currentColor">{escape(last)}</text>'
@@ -102,10 +110,10 @@ class PipelineEquipment(models.Model):
         return True
 
     def receive_safety_reading(self, status, pressure=None, reason=None):
-        """Single authority for MATLAB's SAFE/WARNING/CRITICAL decisions,
-        whether they arrive via safety_listener.py (ROS /safety_status) or
-        the /api/safety_status HTTP endpoint. pressure is context for the
-        ticket, reason is MATLAB's explanation."""
+        """Single authority for MATLAB's SAFE/WARNING/CRITICAL decisions for
+        this pipe, whether they arrive via safety_listener.py (ROS
+        /safety_status) or the /api/safety_status HTTP endpoint. pressure is
+        context for the ticket, reason is MATLAB's explanation."""
         self.ensure_one()
         previous = self.current_status
         # CRITICAL latches: the valve stays shut and only Manual Reset
