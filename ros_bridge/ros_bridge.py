@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -13,8 +14,11 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 # The 5 monitored locations - fixed names, matching coppeliasim/emergency_valve.lua
 LOCATIONS = ['feed_pipeline', 'column_bottom', 'column_top', 'bottoms_output', 'distillate_output']
 
-# Each location is its own Odoo equipment record, named exactly as above
-ODOO_URL = os.environ.get('ODOO_URL', 'http://host.docker.internal:8069')
+# Each location is its own Odoo equipment record, named exactly as above.
+# Default is Docker Desktop's IPv4 address for the Mac host: host.docker.internal
+# also resolves to IPv6 inside the container, which intermittently failed with
+# "Network is unreachable". Override with the ODOO_URL environment variable.
+ODOO_URL = os.environ.get('ODOO_URL', 'http://192.168.65.254:8069')
 
 POLL_SEC = 0.1          # read all 15 signals every tick
 HTTP_CYCLE_SEC = 1.0    # post each location's latest reading and read its valve command this often
@@ -22,11 +26,24 @@ STALE_THRESHOLD_SEC = 3.0  # if no good reading for this long, something's wrong
 HTTP_TIMEOUT_SEC = 2.0
 
 
+def fetch_json(req):
+    # Docker Desktop occasionally drops a container->host connection; retry
+    # once straight away on network errors. HTTP errors (e.g. 404) are real
+    # answers from Odoo, so they're not retried
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError:
+            raise
+        except OSError:
+            if attempt == 2:
+                raise
+
+
 def odoo_jsonrpc(path, params):
     body = json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': params}).encode()
-    req = urllib.request.Request(f'{ODOO_URL}{path}', data=body, headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as resp:
-        reply = json.load(resp)
+    reply = fetch_json(urllib.request.Request(f'{ODOO_URL}{path}', data=body, headers={'Content-Type': 'application/json'}))
     if 'error' in reply:
         raise RuntimeError(reply['error'].get('data', {}).get('message') or reply['error'])
     result = reply.get('result') or {}
@@ -36,8 +53,7 @@ def odoo_jsonrpc(path, params):
 
 
 def odoo_get(path):
-    with urllib.request.urlopen(f'{ODOO_URL}{path}', timeout=HTTP_TIMEOUT_SEC) as resp:
-        return json.load(resp)
+    return fetch_json(urllib.request.Request(f'{ODOO_URL}{path}'))
 
 
 class CoppeliaBridge(Node):
