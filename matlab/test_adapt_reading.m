@@ -59,6 +59,20 @@ raw.last_updated = 1767225600;
 r = adapt_reading(raw, POLL);
 assert(r.timestamp == 1767225600);
 
+% ---- 'timestamp' is Odoo's real field name and is preferred over last_updated ----
+raw = raw0;  raw.timestamp = '2026-01-01T00:00:00.500000+00:00';
+r = adapt_reading(raw, POLL);
+assert(abs(r.timestamp - 1767225600.5) < 1e-6 & strcmp(r.timestamp_source, 'odoo_last_updated'));
+raw.last_updated = '2026-01-01T00:00:10+00:00';          % both present: timestamp wins
+r = adapt_reading(raw, POLL);
+assert(abs(r.timestamp - 1767225600.5) < 1e-6);
+raw.timestamp = 'garbage';                               % bad timestamp -> falls back to last_updated
+r = adapt_reading(raw, POLL);
+assert(r.timestamp == 1767225610);
+raw.last_updated = 'garbage';                            % both bad -> poll time
+r = adapt_reading(raw, POLL);
+assert(r.timestamp == POLL & strcmp(r.timestamp_source, 'matlab_poll'));
+
 % ---- Timestamp: unusable last_updated falls back to poll time, no crash ----
 bad = {[], '', 'not a date', '2026-13-45T00:00:00+00:00', ...
        '2026-01-01T00:00:00+05:30', NaN, {}};   % non-UTC offset must NOT be read as UTC

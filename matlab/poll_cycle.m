@@ -24,7 +24,8 @@ function [entries, state] = poll_cycle(cfg, settings, state)
         state = [];
     end
     if isempty(state)
-        state = struct('prev', struct(), 'fail_count', struct());
+        state = struct('prev', struct(), 'fail_count', struct(), ...
+                       'last_ts', struct(), 'stale_count', struct());
     end
     if isempty(settings.fetch_fn)
         error('poll_cycle:noFetch', ...
@@ -61,7 +62,13 @@ function [e, state] = process_location(e, loc, cfg, settings, state, now_s, send
 
     fetched = false;
     try
+        % TODO(fetch_fn): stub until Riya confirms the /api/live_readings/<location>
+        % response shape (does it include temperature and flow yet?).
         raw = settings.fetch_fn(loc);
+        [state, stale] = update_freshness(state, loc, raw);
+        if stale >= settings.max_stale_polls
+            error('poll_cycle:stale', 'reading unchanged for %d polls (bridge down?)', stale);
+        end
         fetched = true;
         state.fail_count.(loc) = 0;
     catch err
@@ -82,6 +89,9 @@ function [e, state] = process_location(e, loc, cfg, settings, state, now_s, send
     [reading, fluid] = adapt_reading(raw, now_s);
 
     pp = settings.pipe_geometry;
+    if isfield(settings.pipe_geometry_by_location, loc)
+        pp = settings.pipe_geometry_by_location.(loc);
+    end
     pp.fluid_density   = fluid.fluid_density;
     pp.fluid_viscosity = fluid.fluid_viscosity;
 
@@ -93,6 +103,11 @@ function [e, state] = process_location(e, loc, cfg, settings, state, now_s, send
     result  = combine_checks(reading, settings.limits.(loc), pp, prev, settings.opts);
     payload = to_odoo_payload(result);
 
+    if ~fetched
+        % Say WHY it is CRITICAL: the bare reason would only say "invalid reading"
+        payload.reason = sprintf('No usable sensor data (%s); %s', e.error, payload.reason);
+    end
+
     e.status          = result.status;
     e.action          = result.action;
     e.valve_command   = result.valve_command;
@@ -100,7 +115,7 @@ function [e, state] = process_location(e, loc, cfg, settings, state, now_s, send
     e.reason          = payload.reason;
     e.shutdown_signal = payload.shutdown_signal;
 
-    e.url = odoo_url(cfg, ['/api/safety_status/' settings.equipment_names.(loc)]);
+    e.url = odoo_url(cfg, 'safety_status', loc);   % /api/safety_status/<location>
     [ok, msg] = send_fn(e.url, payload);
     e.sent     = logical(ok);
     e.send_msg = msg;
@@ -110,6 +125,22 @@ function [e, state] = process_location(e, loc, cfg, settings, state, now_s, send
     if fetched
         state.prev.(loc) = reading;
     end
+end
+
+function [state, stale] = update_freshness(state, loc, raw)
+% Count consecutive polls where the reading's timestamp did not change.
+% Readings without a timestamp (e.g. fake test data) are never stale.
+    stale = 0;
+    if ~isfield(raw, 'timestamp')
+        return
+    end
+    if isfield(state.last_ts, loc)
+        if isequal(state.last_ts.(loc), raw.timestamp)
+            stale = state.stale_count.(loc) + 1;
+        end
+    end
+    state.stale_count.(loc) = stale;
+    state.last_ts.(loc)     = raw.timestamp;
 end
 
 function f = choose_sender(settings)

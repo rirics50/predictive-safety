@@ -64,10 +64,12 @@ function print_cycle(entries)
         elseif e.skipped
             fprintf('%s %-18s SKIPPED  %s\n', stamp, e.location, e.error);
         else
+            % Show what the sender actually reported ('stub (not sent)', 'posted',
+            % ...) rather than a bare "sent", which was misleading in read-only runs.
             if e.sent
-                sent = 'sent';
+                sent = e.send_msg;
             else
-                sent = 'NOT SENT';
+                sent = ['NOT SENT: ' e.send_msg];
             end
             fprintf('%s %-18s %-8s %s [%s]\n', stamp, e.location, ...
                     upper(e.odoo_status), e.reason, sent);

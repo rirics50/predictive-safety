@@ -11,7 +11,7 @@ function p = to_odoo_payload(result)
 %   ADJUST_VALVE is informational: nothing on the other end can receive
 %   "50%", so it is described in the reason text instead of sent as a signal.
 %
-%   Pure formatting only; no HTTP here. The POST to /api/safety_status/<name>
+%   Pure formatting only; no HTTP here. The POST to /api/safety_status/<location>
 %   takes p.status and p.reason. shutdown_signal is for logging/tests, since
 %   Odoo latches the valve itself when it receives 'critical'.
 

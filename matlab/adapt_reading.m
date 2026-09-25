@@ -9,8 +9,10 @@ function [reading, fluid] = adapt_reading(raw, poll_time_s)
 %           pressure_psi    (PSI)
 %           flow_gpm        (US gallons per minute)
 %           valve_position  (optional, passed through)
-%           last_updated    (optional; ISO-8601 string from /api/live_pressure,
+%           timestamp       (optional; ISO-8601 string as in /api/live_readings,
 %                            a datetime, or numeric epoch seconds)
+%           last_updated    (optional, older name from /api/live_pressure; used
+%                            only if timestamp is absent or unparseable)
 %   poll_time_s  optional epoch seconds to stamp with when last_updated is
 %                absent. Defaults to "now". Injectable so tests are deterministic.
 %
@@ -46,12 +48,14 @@ function [reading, fluid] = adapt_reading(raw, poll_time_s)
     % needed on the way in)
     reading.flow_rate   = get_num(raw, 'flow_gpm') * GPM_TO_M3S * FLUID_DENSITY;
 
-    % The Lua signals carry no timestamp, so we stamp with our own poll time.
-    % Caveat: Odoo's last_updated is when the pressure VALUE last changed, not
-    % when it was sampled. If it stalls, Delta_t = 0 and the rate checks skip
-    % themselves safely, but confirm this is what we want.
+    % Prefer the reading's own timestamp; fall back to our poll time if it is
+    % missing or unparseable. A repeated timestamp gives Delta_t = 0, which the
+    % rate checks skip safely.
     ts = NaN;
-    if isfield(raw, 'last_updated')
+    if isfield(raw, 'timestamp')          % the real field name in /api/live_readings
+        ts = parse_timestamp(raw.timestamp);
+    end
+    if ~isfinite(ts) & isfield(raw, 'last_updated')
         ts = parse_timestamp(raw.last_updated);
     end
     if isfinite(ts)

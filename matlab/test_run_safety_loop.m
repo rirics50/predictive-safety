@@ -164,6 +164,41 @@ world('fail') = {'feed_pipeline'};
 assert(e(1).skipped);
 world('fail') = {};
 
+% ---- Frozen data: an unchanged timestamp must not look SAFE forever ----
+% (bridge dies -> Odoo keeps returning the last values with the same timestamp)
+stamped = make_world(locs, struct('pressure_psi', 30, 'temperature_F', 100, ...
+                                  'flow_gpm', 2, 'timestamp', '2026-09-25T18:00:00+00:00'));
+world('raw') = stamped;
+state = [];
+for n = 1:5                                             % same stamp 5 polls in a row
+    clk('now') = 3000 + n;
+    [e, state] = poll_cycle(cfg, settings, state);
+    assert(all(strcmp({e.odoo_status}, 'safe')));       % up to max_stale_polls (5) still fine
+end
+clk('now') = 3006;
+[e, state] = poll_cycle(cfg, settings, state);          % 6th: stale, failure 1 of 3
+assert(all([e.skipped]) & has(e(1).error, 'unchanged'));
+[e, state] = poll_cycle(cfg, settings, state);          % failure 2
+assert(all([e.skipped]));
+[e, state] = poll_cycle(cfg, settings, state);          % failure 3 -> fail safe
+assert(all(strcmp({e.odoo_status}, 'critical')) & all([e.shutdown_signal] == 1));
+assert(has(e(1).reason, 'No usable sensor data') & has(e(1).reason, 'unchanged'));
+% a new timestamp resets everything
+w = stamped;
+for k = 1:numel(locs)
+    w.(locs{k}).timestamp = '2026-09-25T18:00:07+00:00';
+end
+world('raw') = w;
+[e, state] = poll_cycle(cfg, settings, state);
+assert(all(strcmp({e.odoo_status}, 'safe')));
+% readings with no timestamp at all (like the fake data above) are never stale
+world('raw') = make_world(locs, normal);
+state = [];
+for n = 1:8
+    [e, state] = poll_cycle(cfg, settings, state);
+end
+assert(all(strcmp({e.odoo_status}, 'safe')));
+
 % ---- One location's bug does not stop the others ----
 s4 = settings;
 s4.limits = rmfield(s4.limits, 'column_top');

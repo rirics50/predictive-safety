@@ -60,8 +60,16 @@ assert(strncmp(c.odoo_base_url, 'http', 4) & strncmp(c.rosbridge_url, 'ws', 2));
 
 % ---- odoo_url joins cleanly ----
 cfg = struct('odoo_base_url', 'http://1.2.3.4:8069');
-assert(strcmp(odoo_url(cfg, '/api/safety_status/P-101'), 'http://1.2.3.4:8069/api/safety_status/P-101'));
-assert(strcmp(odoo_url(cfg, 'api/safety_status/P-101'),  'http://1.2.3.4:8069/api/safety_status/P-101'));
+assert(strcmp(odoo_url(cfg, '/api/safety_status/feed_pipeline'), 'http://1.2.3.4:8069/api/safety_status/feed_pipeline'));
+assert(strcmp(odoo_url(cfg, 'api/safety_status/feed_pipeline'),  'http://1.2.3.4:8069/api/safety_status/feed_pipeline'));
+
+% ---- named endpoints per location ----
+assert(strcmp(odoo_url(cfg, 'safety_status', 'column_top'),  'http://1.2.3.4:8069/api/safety_status/column_top'));
+assert(strcmp(odoo_url(cfg, 'equipment', 'column_top'),      'http://1.2.3.4:8069/api/equipment/column_top'));
+assert(strcmp(odoo_url(cfg, 'live_readings', 'column_top'),  'http://1.2.3.4:8069/api/live_readings/column_top'));
+assert(strcmp(odoo_url(cfg, 'valve_commands', 'column_top'), 'http://1.2.3.4:8069/api/valve_commands/column_top'));
+assert(throws(@() odoo_url(cfg, 'safety_stauts', 'column_top'), 'odoo_url:unknownEndpoint'));   % typo
+assert(throws(@() odoo_url(cfg, 'safety_status', ''), 'odoo_url:noLocation'));
 assert(strcmp(odoo_url(cfg, '//api/x'),                  'http://1.2.3.4:8069/api/x'));
 
 if exist(tmp, 'file') == 2
