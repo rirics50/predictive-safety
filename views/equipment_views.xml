@@ -52,6 +52,15 @@
                         </group>
                     </group>
                     <notebook>
+                        <page string="Monitored Locations" name="locations">
+                            <field name="location_ids">
+                                <list editable="bottom">
+                                    <field name="location"/>
+                                    <field name="flow_limit"/>
+                                    <field name="pipe_length"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Pressure History" name="pressure_history">
                             <field name="pressure_chart" nolabel="1" readonly="1"/>
                             <field name="reading_ids" readonly="1">

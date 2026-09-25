@@ -45,6 +45,7 @@ class PipelineEquipment(models.Model):
     ], string='Valve State', default='open', readonly=True)
 
     reading_ids = fields.One2many('predictive.safety.pressure.reading', 'equipment_id', string='Pressure History')
+    location_ids = fields.One2many('predictive.safety.location', 'equipment_id', string='Monitored Locations')
     pressure_chart = fields.Html(string='Pressure Chart', compute='_compute_pressure_chart', sanitize=False)
 
     @api.depends('reading_ids.pressure', 'reading_ids.timestamp')

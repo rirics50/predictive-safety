@@ -24,6 +24,11 @@ class PredictiveSafetyController(http.Controller):
             'corrosion_allowance': equipment.corrosion_allowance,
             'design_temperature': equipment.design_temperature,
             'design_pressure': equipment.design_pressure,
+            'locations': [{
+                'location': loc.location,
+                'flow_limit': loc.flow_limit,
+                'pipe_length': loc.pipe_length,
+            } for loc in equipment.location_ids],
         }
         return request.make_response(json.dumps(data), headers=[('Content-Type', 'application/json')])
 
