@@ -47,7 +47,7 @@ The repo root is the `predictive_safety` Odoo module itself (clone it into a fol
 └── docs/                 # (planned) Architecture diagrams, notes
 ```
 
-`ros_bridge.py` reads `ODOO_URL` from the environment (default `http://host.docker.internal:8069`).
+`ros_bridge.py` reads `ODOO_URL` from the environment (default `http://192.168.65.254:8069`, Docker Desktop's IPv4 address for the host).
 
 ## API
 Each of the 5 monitored pipes is its own Odoo equipment record, named exactly:
